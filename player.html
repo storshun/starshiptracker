@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Starship Tracker</title>
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://starship.shatteredmoon.io/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#03050a; --panel:rgba(8,12,22,.78); --line:rgba(140,170,220,.18);
+    --text:#dfe8f7; --dim:#8a9ab5; --accent:#ff7a1a; --ok:#39d98a; --warn:#ffc53d; --bad:#ff5c5c; --blue:#5cc8ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}
+  #scene{position:fixed;inset:0}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  #hud{top:16px;left:16px;width:330px;padding:16px 18px}
+  #hud h1{margin:0;font-size:15px;letter-spacing:.18em;font-weight:800}
+  #hud h1 span{color:var(--accent)}
+  #mission{color:var(--dim);font-size:12px;margin-top:4px;min-height:15px}
+  .chip{display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:3px 9px;border-radius:999px;font:600 11px 'JetBrains Mono',monospace;letter-spacing:.06em;border:1px solid currentColor}
+  .chip i{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
+  .chip.tle{color:var(--ok)} .chip.model{color:var(--warn)} .chip.pad{color:var(--blue)} .chip.none{color:var(--dim)}
+  #met{font:600 30px 'JetBrains Mono',monospace;margin:12px 0 2px;letter-spacing:.02em}
+  #metlabel{color:var(--dim);font-size:11px;letter-spacing:.12em}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-top:14px}
+  .k{color:var(--dim);font-size:10px;letter-spacing:.14em;text-transform:uppercase}
+  .v{font:600 15px 'JetBrains Mono',monospace;margin-top:2px;white-space:nowrap}
+  #src{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);font-size:11px;color:var(--dim);line-height:1.5}
+  #src b{color:var(--text);font-weight:600}
+  #ctl{top:16px;right:16px;width:300px;padding:14px 16px;font-size:12px}
+  #ctl h2{margin:0 0 8px;font-size:11px;letter-spacing:.16em;color:var(--dim);font-weight:600}
+  .row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  button,input,textarea,select{font:12px 'JetBrains Mono',monospace;color:var(--text);background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:7px;padding:6px 9px}
+  button{cursor:pointer} button:hover{border-color:var(--accent)}
+  button.on{border-color:var(--accent);color:var(--accent)}
+  input,textarea{width:100%}
+  textarea{height:62px;resize:vertical;font-size:10px}
+  label.cb{display:flex;align-items:center;gap:7px;color:var(--dim);cursor:pointer}
+  label.cb input{width:auto}
+  details{margin-top:6px;border-top:1px solid var(--line);padding-top:8px}
+  summary{cursor:pointer;color:var(--dim);letter-spacing:.1em;font-size:11px}
+  .f{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0}
+  .f label{font-size:10px;color:var(--dim)}
+  #log{bottom:16px;right:16px;width:300px;max-height:30vh;overflow:auto;padding:10px 14px;font:11px/1.55 'JetBrains Mono',monospace;color:var(--dim)}
+  #log .ok{color:var(--ok)} #log .warn{color:var(--warn)} #log .bad{color:var(--bad)}
+  #tag{position:fixed;pointer-events:none;font:600 11px 'JetBrains Mono',monospace;color:#fff;background:rgba(255,122,26,.18);border:1px solid var(--accent);border-radius:5px;padding:2px 6px;transform:translate(14px,-50%);white-space:nowrap;display:none}
+  #sitetag{position:fixed;pointer-events:none;font:10px 'JetBrains Mono',monospace;color:var(--blue);transform:translate(10px,-50%);white-space:nowrap}
+  #legend{bottom:16px;left:16px;padding:9px 14px;font-size:11px;color:var(--dim);display:flex;gap:14px}
+  #legend span::before{content:"";display:inline-block;width:16px;height:3px;margin-right:6px;vertical-align:middle;background:var(--c)}
+  #full{display:none}
+  @media (max-width:760px){#ctl,#log,#legend{display:none} #hud{width:calc(100% - 32px)}}
+  /* Compact layout for small frames, e.g. an X Player Card (about 480 x 480 px) */
+  @media (max-width:560px), (max-height:520px){
+    #hud{top:auto;bottom:8px;left:8px;right:8px;width:auto;padding:9px 11px}
+    #hud h1{font-size:11px} #mission{font-size:10px;margin-top:2px}
+    .chip{margin-top:5px;font-size:9px;padding:2px 7px}
+    #met{font-size:19px;margin:5px 0 0} #metlabel,#src{display:none}
+    .grid{grid-template-columns:repeat(3,1fr);gap:4px 8px;margin-top:6px}
+    .k{font-size:8px} .v{font-size:11px}
+    #full{display:block;position:fixed;top:8px;right:8px;font:600 10px 'JetBrains Mono',monospace;color:var(--text);text-decoration:none;padding:4px 8px}
+    #sitetag,#tag{font-size:9px}
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js"></script>
+</head>
+<body>
+<div id="scene"></div>
+<div id="tag">SHIP</div>
+<div id="sitetag">STARBASE</div>
+
+<div id="hud" class="panel">
+  <h1><span>&#9650;</span> STARSHIP TRACKER</h1>
+  <div id="mission">Loading launch data…</div>
+  <div id="mode" class="chip none"><i></i><span>STARTING</span></div>
+  <div id="met">--:--:--</div>
+  <div id="metlabel">MISSION ELAPSED TIME</div>
+  <div class="grid">
+    <div><div class="k">Latitude</div><div class="v" id="lat">—</div></div>
+    <div><div class="k">Longitude</div><div class="v" id="lon">—</div></div>
+    <div><div class="k">Altitude</div><div class="v" id="alt">—</div></div>
+    <div><div class="k">Speed (inertial)</div><div class="v" id="spd">—</div></div>
+    <div><div class="k">Over</div><div class="v" id="over">—</div></div>
+    <div><div class="k" id="nextk">Next event</div><div class="v" id="next">—</div></div>
+  </div>
+  <div id="src">Position source: <b id="srcname">—</b><br><span id="srcinfo"></span><br>Sim time: <b id="simclock">—</b></div>
+</div>
+
+<div id="ctl" class="panel">
+  <h2>VIEW</h2>
+  <div class="row">
+    <button id="bFollow" class="on">Follow ship</button>
+    <button id="bSite">Starbase</button>
+    <button id="bRefresh">Refresh data</button>
+  </div>
+  <div class="row">
+    <label class="cb"><input type="checkbox" id="cTrack" checked> Ground track</label>
+    <label class="cb"><input type="checkbox" id="cExag"> Altitude ×5</label>
+  </div>
+  <h2>TIME</h2>
+  <div class="row" id="warp">
+    <button data-w="1" class="on">Live</button><button data-w="60">60×</button><button data-w="600">600×</button><button data-w="-600">−600×</button>
+  </div>
+  <details>
+    <summary>TRACKING DATA (TLE)</summary>
+    <div class="f" style="grid-template-columns:1fr auto">
+      <input id="iNorad" placeholder="NORAD catalog no.">
+      <button id="bNorad">Load</button>
+    </div>
+    <textarea id="iTle" placeholder="Paste a 2- or 3-line TLE here"></textarea>
+    <div class="row" style="margin-top:6px"><button id="bTle">Use TLE</button><button id="bTleClear">Clear TLE</button></div>
+  </details>
+  <details>
+    <summary>MODEL SETTINGS</summary>
+    <div class="f">
+      <div><label>Liftoff (UTC)</label><input id="mT0"></div>
+      <div><label>Mission length (h)</label><input id="mDur"></div>
+      <div><label>Orbit altitude (km)</label><input id="mAlt"></div>
+      <div><label>Inclination (°)</label><input id="mInc"></div>
+    </div>
+    <button id="bModel">Apply model</button>
+  </details>
+</div>
+
+<div id="log" class="panel"></div>
+<a id="full" class="panel" href="./" target="_blank" rel="noopener">Open full tracker ↗</a>
+<div id="legend" class="panel"><span style="--c:#ff7a1a">Ship track, last 45 min</span><span style="--c:#5cc8ff">Ship track, next 90 min</span><b style="color:#5cc8ff;font-weight:600">● Starbase = launch site</b></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ---------------- constants ---------------- */
+const RE = 6371;                 // km, scene unit radius
+const MU = 398600.4418, REQ = 6378.137, J2 = 1.08263e-3;
+const D2R = Math.PI/180, R2D = 180/Math.PI;
+const SITE = { name:'Starbase OLP-2', lat:25.9967, lon:-97.1543 };
+// Known flight on 2026-11-13. Launch Library 2 replaces these values when it answers.
+// Inclination: Flight 14 flew a 262 x 275 km, 30.5° orbit (NASASpaceFlight). Flight 15 is assumed to be similar.
+const DEFAULT_MISSION = {
+  name:'Starship Flight 15 — Ship 42', t0:Date.parse('2026-11-13T22:47:36Z'),
+  durH:22.5, altKm:275, incDeg:30.5, status:'In Flight', source:'built-in values (news reports)'
+};
+const CT = 'https://celestrak.org/NORAD/elements/gp.php';
+const LL2 = ['https://ll.thespacedevs.com/2.3.0', 'https://ll.thespacedevs.com/2.2.0'];
+
+/* ---------------- small helpers ---------------- */
+const $ = id => document.getElementById(id);
+const store = {
+  get(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch{ return null; } },
+  set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+};
+function log(msg, cls=''){
+  const d = document.createElement('div'); if (cls) d.className = cls;
+  d.textContent = new Date().toISOString().slice(11,19) + '  ' + msg;
+  const L = $('log'); L.prepend(d); while (L.children.length > 40) L.lastChild.remove();
+}
+async function getText(url, ms=12000){
+  const ac = new AbortController(); const t = setTimeout(()=>ac.abort(), ms);
+  try { const r = await fetch(url, {signal:ac.signal}); const tx = await r.text(); if (!r.ok && !/No GP data/i.test(tx)) throw new Error('HTTP '+r.status); return tx; }
+  finally { clearTimeout(t); }
+}
+const pad2 = n => String(Math.floor(n)).padStart(2,'0');
+function fmtDur(s){ const neg = s<0; s=Math.abs(s); const d=Math.floor(s/86400); s-=d*86400;
+  return (neg?'−':'') + (d? d+'d ':'') + pad2(s/3600)+':'+pad2(s%3600/60)+':'+pad2(s%60); }
+const fmtLat = v => Math.abs(v).toFixed(2)+'° '+(v>=0?'N':'S');
+const fmtLon = v => Math.abs(v).toFixed(2)+'° '+(v>=0?'E':'W');
+const wrapLon = l => ((l+540)%360)-180;
+
+/* ---------------- time & sun ---------------- */
+const jd = t => t/86400000 + 2440587.5;
+function gmst(t){ // radians
+  const d = jd(t) - 2451545.0;
+  return ((280.46061837 + 360.98564736629*d) % 360 + 360) % 360 * D2R;
+}
+function subsolar(t){ // lat, lon in degrees
+  const n = jd(t) - 2451545.0;
+  const L = (280.460 + 0.9856474*n) % 360, g = ((357.528 + 0.9856003*n) % 360)*D2R;
+  const lam = (L + 1.915*Math.sin(g) + 0.020*Math.sin(2*g))*D2R, eps = (23.439 - 4e-7*n)*D2R;
+  const dec = Math.asin(Math.sin(eps)*Math.sin(lam));
+  const ra = Math.atan2(Math.cos(eps)*Math.sin(lam), Math.cos(lam));
+  return { lat: dec*R2D, lon: wrapLon((ra - gmst(t))*R2D) };
+}
+
+/* ---------------- state ---------------- */
+let mission = { ...DEFAULT_MISSION };
+let satrec = null, tleInfo = null;
+let simOffset = 0, warp = 1, lastReal = Date.now(), simT = Date.now();
+let follow = true, showTrack = true, exag = 1;
+
+/* ---------------- nominal model ----------------
+   Ascent: angle along the orbit grows as n·t²/(2·tIns) up to insertion (speed matches orbit speed there).
+   Orbit: circular, J2 node drift. Plane set so that the vehicle leaves Starbase on a descending (ESE) pass. */
+const T_INS = 510; // s, approximate engine cutoff
+function modelState(t){
+  const m = mission, dt = (t - m.t0)/1000;
+  const alt = m.altKm, a = REQ + alt, n = Math.sqrt(MU/a**3);
+  let inc = m.incDeg*D2R; const phi = SITE.lat*D2R;
+  if (Math.sin(inc) <= Math.abs(Math.sin(phi))) inc = Math.abs(phi) + 0.002;
+  const u0 = Math.PI - Math.asin(Math.sin(phi)/Math.sin(inc));
+  const aSite = SITE.lon*D2R + gmst(m.t0);
+  const Om0 = aSite - Math.atan2(Math.cos(inc)*Math.sin(u0), Math.cos(u0));
+  const OmDot = -1.5*n*J2*(REQ/a)**2*Math.cos(inc);
+  const uDot = n*(1 + 0.75*J2*(REQ/a)**2*(2 - 3*Math.sin(inc)**2) + 0.75*J2*(REQ/a)**2*(4 - 5*Math.sin(inc)**2));
+  let th, h;
+  if (dt < T_INS){ const x = Math.max(dt,0)/T_INS; th = n*Math.max(dt,0)**2/(2*T_INS); h = alt*(1-(1-x)**2); }
+  else { th = n*T_INS/2 + uDot*(dt - T_INS); h = alt; }
+  const u = u0 + th, Om = Om0 + OmDot*Math.max(dt,0), r = REQ + h;
+  const x = r*(Math.cos(Om)*Math.cos(u) - Math.sin(Om)*Math.sin(u)*Math.cos(inc));
+  const y = r*(Math.sin(Om)*Math.cos(u) + Math.cos(Om)*Math.sin(u)*Math.cos(inc));
+  const z = r*Math.sin(u)*Math.sin(inc);
+  return { eci:{x,y,z}, lat: Math.asin(z/r)*R2D, lon: wrapLon((Math.atan2(y,x) - gmst(t))*R2D), alt:h };
+}
+
+function tleState(t){
+  if (!satrec || !window.satellite) return null;
+  const d = new Date(t), pv = satellite.propagate(satrec, d);
+  if (!pv || !pv.position || isNaN(pv.position.x)) return null;
+  const g = satellite.eciToGeodetic(pv.position, satellite.gstime(d));
+  const v = pv.velocity;
+  return { eci:pv.position, lat:g.latitude*R2D, lon:g.longitude*R2D, alt:g.height,
+           speed: Math.hypot(v.x,v.y,v.z) };
+}
+
+function phaseAt(t){
+  const end = mission.t0 + mission.durH*3600e3;
+  if (satrec && tleInfo){
+    const ageH = Math.abs(t - tleInfo.epoch)/3600e3;
+    if (ageH < 72 && t < end + 3600e3) { const s = tleState(t); if (s && s.alt > 80) return { mode:'tle', s }; }
+  }
+  if (t < mission.t0) return { mode:'pad', label: 'WAITING FOR LIFTOFF' };
+  if (t > end) return { mode:'pad', label: 'MISSION TIME OVER' };
+  const s = modelState(t);
+  const t2 = modelState(t+1000);
+  s.speed = Math.hypot(t2.eci.x-s.eci.x, t2.eci.y-s.eci.y, t2.eci.z-s.eci.z);
+  return { mode:'model', s, entry: end - t < 3600e3 };
+}
+
+/* ---------------- three.js scene ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+$('scene').appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 0.01, 200);
+camera.position.set(0, 1.2, 3.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.minDistance = 1.25; controls.maxDistance = 12; controls.enablePan = false;
+renderer.domElement.addEventListener('pointerdown', () => setFollow(false));
+
+function llv(lat, lon, r=1){ const la=lat*D2R, lo=lon*D2R;
+  return new THREE.Vector3(r*Math.cos(la)*Math.cos(lo), r*Math.sin(la), -r*Math.cos(la)*Math.sin(lo)); }
+
+// stars
+{ const g = new THREE.BufferGeometry(), N = 4000, p = new Float32Array(N*3);
+  for (let i=0;i<N;i++){ const v = new THREE.Vector3().randomDirection().multiplyScalar(60+Math.random()*40); p.set([v.x,v.y,v.z], i*3); }
+  g.setAttribute('position', new THREE.BufferAttribute(p,3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0x9fb3d9, size:0.12, sizeAttenuation:true }))); }
+
+// earth textures: canvas first, then better sources if the network allows
+const W = 2048, H = 1024;
+const dayCan = document.createElement('canvas'), nightCan = document.createElement('canvas');
+dayCan.width = nightCan.width = W; dayCan.height = nightCan.height = H;
+const dayTex = new THREE.CanvasTexture(dayCan), nightTex = new THREE.CanvasTexture(nightCan);
+[dayTex, nightTex].forEach(t => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; });
+
+function paintCanvas(geo){
+  const dc = dayCan.getContext('2d'), nc = nightCan.getContext('2d');
+  const ocean = dc.createLinearGradient(0,0,0,H);
+  ocean.addColorStop(0,'#0b2238'); ocean.addColorStop(.5,'#0f3150'); ocean.addColorStop(1,'#0b2238');
+  dc.fillStyle = ocean; dc.fillRect(0,0,W,H);
+  nc.fillStyle = '#02060c'; nc.fillRect(0,0,W,H);
+  const px = lon => (lon+180)/360*W, py = lat => (90-lat)/180*H;
+  if (geo){
+    const rings = [];
+    for (const f of geo.features || []){
+      const g = f.geometry; if (!g) continue;
+      const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+      for (const poly of polys) rings.push(poly);
+    }
+    for (const [ctx, fill, stroke] of [[dc,'#2f4a3a','#7fa58a'], [nc,'#0b1420','#26405e']]){
+      ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 1.2;
+      for (const poly of rings){
+        for (const shift of [-360, 0, 360]){
+          ctx.beginPath();
+          for (const ring of poly){
+            let prev = null;
+            ring.forEach(([lo, la], i) => {
+              if (prev !== null){ while (lo - prev > 180) lo -= 360; while (lo - prev < -180) lo += 360; }
+              prev = lo;
+              const X = px(lo + shift), Y = py(la);
+              i ? ctx.lineTo(X,Y) : ctx.moveTo(X,Y);
+            });
+            ctx.closePath();
+          }
+          ctx.fill('evenodd'); ctx.stroke();
+        }
+      }
+    }
+  }
+  // graticule
+  for (const [ctx, c] of [[dc,'rgba(160,190,230,.10)'], [nc,'rgba(90,130,190,.10)']]){
+    ctx.strokeStyle = c; ctx.lineWidth = 1;
+    for (let lo=-180; lo<=180; lo+=30){ ctx.beginPath(); ctx.moveTo(px(lo),0); ctx.lineTo(px(lo),H); ctx.stroke(); }
+    for (let la=-60; la<=60; la+=30){ ctx.beginPath(); ctx.moveTo(0,py(la)); ctx.lineTo(W,py(la)); ctx.stroke(); }
+  }
+  dayTex.needsUpdate = nightTex.needsUpdate = true;
+}
+paintCanvas(null);
+
+const earthMat = new THREE.ShaderMaterial({
+  uniforms: { dayMap:{value:dayTex}, nightMap:{value:nightTex}, sunDir:{value:new THREE.Vector3(1,0,0)}, nightGain:{value:1.0} },
+  vertexShader: `varying vec2 vUv; varying vec3 vN;
+    void main(){ vUv = uv; vN = normalize(mat3(modelMatrix)*normal); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: `uniform sampler2D dayMap, nightMap; uniform vec3 sunDir; uniform float nightGain; varying vec2 vUv; varying vec3 vN;
+    void main(){ float d = dot(normalize(vN), normalize(sunDir));
+      vec3 day = texture2D(dayMap, vUv).rgb * (0.30 + 0.85*max(d,0.0));
+      vec3 night = texture2D(nightMap, vUv).rgb * nightGain;
+      gl_FragColor = vec4(mix(night, day, smoothstep(-0.12, 0.12, d)), 1.0);
+      #include <colorspace_fragment>
+    }`
+});
+const earth = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 64), earthMat);
+scene.add(earth);
+
+// atmosphere rim
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.025, 96, 48), new THREE.ShaderMaterial({
+  side: THREE.BackSide, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false,
+  vertexShader:`varying vec3 vN; void main(){ vN = normalize(normalMatrix*normal); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader:`varying vec3 vN; void main(){ float i = pow(0.72 - dot(vN, vec3(0,0,1.)), 3.0); gl_FragColor = vec4(0.35,0.62,1.0,1.0)*i; }`
+})));
+
+// geography for the canvas texture (works where only CDN scripts are allowed)
+async function loadGeo(){
+  const tries = [
+    async () => (await import('https://cdn.jsdelivr.net/npm/@amcharts/amcharts5-geodata@5/worldLow.js/+esm')).default,
+    async () => (await import('https://cdn.jsdelivr.net/npm/@amcharts/amcharts4-geodata@4/worldLow.js/+esm')).default,
+    async () => { const topo = (await import('https://cdn.jsdelivr.net/npm/world-atlas@2/land-110m.json/+esm')).default;
+                  const tc = await import('https://cdn.jsdelivr.net/npm/topojson-client@3/+esm');
+                  return tc.feature(topo, topo.objects.land); },
+  ];
+  for (const f of tries){
+    try { const g = await f(); if (g && g.features && g.features.length){ paintCanvas(g); log('Coastlines loaded ('+g.features.length+' shapes).','ok'); return; } }
+    catch(e){ /* try next */ }
+  }
+  log('Coastline data not available. Globe shows a grid only.','warn');
+}
+// photo textures (load only where remote images are allowed, e.g. when you open the file locally)
+function loadPhotos(){
+  const L = new THREE.TextureLoader(); L.setCrossOrigin('anonymous');
+  const base = 'https://unpkg.com/three-globe@2.31.0/example/img/';
+  L.load(base+'earth-blue-marble.jpg', t => {
+    t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; earthMat.uniforms.dayMap.value = t; log('Photo texture loaded.','ok');
+    L.load(base+'earth-night.jpg', n => { n.colorSpace = THREE.SRGBColorSpace; earthMat.uniforms.nightMap.value = n; earthMat.uniforms.nightGain.value = 1.4; });
+  }, undefined, () => {});
+}
+loadGeo(); loadPhotos();
+
+// site marker
+const siteMarker = new THREE.Mesh(new THREE.SphereGeometry(0.008, 12, 8), new THREE.MeshBasicMaterial({ color:0x5cc8ff }));
+siteMarker.position.copy(llv(SITE.lat, SITE.lon, 1.001)); scene.add(siteMarker);
+
+// ship marker: glow sprite + core + altitude stem
+function glowTex(){ const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  const r = g.createRadialGradient(64,64,0,64,64,64);
+  r.addColorStop(0,'rgba(255,255,255,1)'); r.addColorStop(.18,'rgba(255,170,90,.95)'); r.addColorStop(.45,'rgba(255,110,30,.35)'); r.addColorStop(1,'rgba(255,90,0,0)');
+  g.fillStyle = r; g.fillRect(0,0,128,128); return new THREE.CanvasTexture(c); }
+const ship = new THREE.Group();
+const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTex(), blending:THREE.AdditiveBlending, depthWrite:false, transparent:true }));
+glow.scale.setScalar(0.09); ship.add(glow);
+ship.add(new THREE.Mesh(new THREE.SphereGeometry(0.006, 12, 8), new THREE.MeshBasicMaterial({ color:0xffffff })));
+scene.add(ship);
+const stemGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+const stem = new THREE.Line(stemGeo, new THREE.LineBasicMaterial({ color:0xff7a1a, transparent:true, opacity:.6 }));
+scene.add(stem);
+
+// ground tracks
+function mkLine(color, opacity){ const l = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color, transparent:true, opacity })); scene.add(l); return l; }
+const pastLine = mkLine(0xff7a1a, .95), futLine = mkLine(0x5cc8ff, .75);
+let lastTrackAt = -1e15;
+function rFor(alt){ return 1 + alt*exag/RE; }
+function buildTracks(t){
+  const past = [], fut = [];
+  const step = 30e3, end = mission.t0 + mission.durH*3600e3;
+  for (let k = t - 45*60e3; k <= t + 90*60e3; k += step){
+    const p = phaseAt(k); if (p.mode === 'pad') continue;
+    const v = llv(p.s.lat, p.s.lon, rFor(p.s.alt) + 0.0008);
+    (k <= t ? past : fut).push(v);
+  }
+  const cur = phaseAt(t); if (cur.mode !== 'pad'){ const v = llv(cur.s.lat, cur.s.lon, rFor(cur.s.alt)+0.0008); past.push(v); fut.unshift(v); }
+  pastLine.geometry.dispose(); pastLine.geometry = new THREE.BufferGeometry().setFromPoints(past);
+  futLine.geometry.dispose(); futLine.geometry = new THREE.BufferGeometry().setFromPoints(fut);
+  lastTrackAt = t;
+}
+
+/* ---------------- data feeds ---------------- */
+async function loadLaunches(){
+  for (const base of LL2){
+    try {
+      const q = '?search=Starship&mode=normal&limit=3';
+      const [prev, up] = await Promise.all([
+        getText(base+'/launches/previous/'+q).then(JSON.parse).catch(()=>null),
+        getText(base+'/launches/upcoming/'+q).then(JSON.parse).catch(()=>null) ]);
+      if (!prev && !up) throw new Error('no answer');
+      const isStarship = l => /starship/i.test(l?.rocket?.configuration?.name || l?.name || '');
+      const last = (prev?.results||[]).filter(isStarship)[0], next = (up?.results||[]).filter(isStarship)[0];
+      const now = simT;
+      // An "upcoming" launch whose NET has passed is often the flight that is in progress.
+      let pick = null;
+      if (next && Date.parse(next.net) <= now + 6*3600e3) pick = next;
+      else if (last && now - Date.parse(last.net) < 36*3600e3) pick = last;
+      else pick = next || last;
+      if (pick){
+        const st = pick.status?.abbrev || pick.status?.name || '';
+        mission = { ...mission, name: pick.name, t0: Date.parse(pick.net), status: st, source:'Launch Library 2 (The Space Devs)' };
+        if (pick.pad?.latitude){ SITE.lat = +pick.pad.latitude; SITE.lon = +pick.pad.longitude; SITE.name = pick.pad.name || SITE.name;
+          siteMarker.position.copy(llv(SITE.lat, SITE.lon, 1.001)); }
+        if (!/flight 15|31-2/i.test(pick.name)) { mission.durH = store.get('st.durH') || 1.1; }
+        fillModelForm(); lastTrackAt = -1e15;
+        log('Launch data: '+pick.name+' — '+st+', NET '+pick.net, 'ok');
+      }
+      return;
+    } catch(e){ log('Launch Library '+base.split('/').pop()+': '+e.message, 'warn'); }
+  }
+  log('Launch Library not reachable. Built-in Flight 15 values in use.', 'warn');
+}
+
+function parseTle(text){
+  const lines = text.split(/\r?\n/).map(s=>s.trimEnd()).filter(Boolean);
+  const out = [];
+  for (let i=0;i<lines.length;i++){
+    if (lines[i].startsWith('1 ') && lines[i+1]?.startsWith('2 ')){
+      const name = (i>0 && !lines[i-1].startsWith('2 ')) ? lines[i-1].trim() : 'OBJECT '+lines[i].slice(2,7).trim();
+      out.push({ name, l1:lines[i], l2:lines[i+1] }); i++;
+    }
+  }
+  return out;
+}
+// CelesTrak now gives 6-digit catalog numbers, which the TLE format cannot hold.
+// So we ask for OMM JSON and write fixed-column TLE lines for satellite.js (Alpha-5 catalog field).
+function alpha5(n){ n = +n; if (n < 100000) return String(n).padStart(5,'0');
+  const L = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; return L[Math.floor(n/10000) - 10] + String(n % 10000).padStart(4,'0'); }
+function expField(v){ // " 12345-3" style, 8 chars
+  if (!v) return ' 00000-0';
+  let e = Math.floor(Math.log10(Math.abs(v))) + 1, m = Math.round(Math.abs(v)/10**e*1e5);
+  if (m >= 1e5){ m = 1e4; e++; }
+  return (v<0?'-':' ') + String(m).padStart(5,'0') + (e<0?'-':'+') + Math.min(Math.abs(e),9);
+}
+function omm2tle(o){
+  const ep = Date.parse(o.EPOCH.endsWith('Z') ? o.EPOCH : o.EPOCH+'Z'), y = new Date(ep).getUTCFullYear();
+  const doy = (ep - Date.UTC(y,0,1))/86400e3 + 1;
+  const sat = alpha5(o.NORAD_CAT_ID);
+  const id = (o.OBJECT_ID||'').replace(/^\d\d(\d\d)-(\d{3})(\w*)$/, '$1$2$3').padEnd(8).slice(0,8);
+  const nd = o.MEAN_MOTION_DOT || 0, ndS = (nd<0?'-':' ') + Math.abs(nd).toFixed(8).slice(1);
+  const f = (x,w,d) => (+x).toFixed(d).padStart(w);
+  const l1 = '1 '+sat+'U '+id+' '+String(y%100).padStart(2,'0')+doy.toFixed(8).padStart(12,'0')+' '+ndS+' '+' 00000-0'+' '+expField(o.BSTAR||0)+' 0 '+String(o.ELEMENT_SET_NO||999).padStart(4).slice(-4)+'0';
+  const l2 = '2 '+sat+' '+f(o.INCLINATION,8,4)+' '+f(o.RA_OF_ASC_NODE,8,4)+' '+String(Math.round(o.ECCENTRICITY*1e7)).padStart(7,'0')+' '+f(o.ARG_OF_PERICENTER,8,4)+' '+f(o.MEAN_ANOMALY,8,4)+' '+f(o.MEAN_MOTION,11,8)+String(o.REV_AT_EPOCH||0).padStart(5).slice(-5)+'0';
+  return { name:o.OBJECT_NAME, l1, l2, norad:String(o.NORAD_CAT_ID), epoch:ep };
+}
+function useTle(t, src){
+  if (!window.satellite){ log('satellite.js did not load. TLE mode is not available.','bad'); return false; }
+  try {
+    const rec = satellite.twoline2satrec(t.l1, t.l2);
+    const epoch = Date.UTC(2000 + (rec.epochyr < 57 ? rec.epochyr : rec.epochyr - 100), 0, 1) + (rec.epochdays-1)*86400e3;
+    satrec = rec; tleInfo = { name:t.name, norad:t.norad || t.l1.slice(2,7).trim(), epoch, src };
+    store.set('st.tle', { ...t, src }); lastTrackAt = -1e15;
+    log('Using TLE for '+t.name+' (epoch '+new Date(epoch).toISOString().slice(0,16)+'Z).','ok');
+    return true;
+  } catch(e){ log('TLE not valid: '+e.message,'bad'); return false; }
+}
+// CelesTrak asks users not to fetch the same query more than once per 2 hours.
+async function celestrak(query, force=false){
+  const key = 'st.ct.'+query, c = store.get(key);
+  if (!force && c && Date.now() - c.at < 2*3600e3) return c.text;
+  const text = await getText(CT+'?'+query, 20000);
+  store.set(key, { at:Date.now(), text });
+  return text;
+}
+async function findStarshipTle(force=false){
+  // CelesTrak named the Flight 14 ship "STARSHIP-14", so the name query finds new ships.
+  const cands = [];
+  for (const q of ['NAME=STARSHIP&FORMAT=JSON', 'GROUP=last-30-days&FORMAT=JSON']){
+    try {
+      const txt = await celestrak(q, force);
+      if (/^No GP data/i.test(txt.trim())) continue;
+      const list = JSON.parse(txt).filter(o => /STARSHIP|\bSHIP\b/i.test(o.OBJECT_NAME)).map(omm2tle);
+      cands.push(...list);
+    } catch(e){ log('CelesTrak ('+q.split('&')[0]+'): '+e.message, 'warn'); return; }
+  }
+  if (!cands.length){ log('CelesTrak has no Starship object yet. The model is in use.', 'warn'); return; }
+  // newest epoch first
+  const ep = o => o.epoch;
+  cands.sort((a,b)=>ep(b)-ep(a));
+  const best = cands[0];
+  if (ep(best) < mission.t0 - 3600e3){ log('Newest CelesTrak Starship object ('+best.name+') is older than this flight. Not used.','warn'); return; }
+  useTle(best, 'CelesTrak');
+}
+async function loadNorad(n){
+  try { const txt = await celestrak('CATNR='+encodeURIComponent(n)+'&FORMAT=JSON', true);
+        if (/^No GP data/i.test(txt.trim())) throw new Error('no GP data yet');
+        const o = JSON.parse(txt)[0]; if (!o) throw new Error('no data'); useTle(omm2tle(o), 'CelesTrak #'+n); }
+  catch(e){ log('NORAD '+n+': '+e.message,'bad'); }
+}
+async function refreshAll(force=false){
+  await loadLaunches();
+  const saved = store.get('st.tle');
+  if (saved && !satrec) useTle(saved, saved.src || 'saved');
+  await findStarshipTle(force);
+}
+
+/* ---------------- UI wiring ---------------- */
+function setFollow(on){ follow = on; $('bFollow').classList.toggle('on', on); }
+$('bFollow').onclick = () => setFollow(!follow);
+$('bSite').onclick = () => { setFollow(false); flyTo(llv(SITE.lat, SITE.lon, 1)); };
+$('bRefresh').onclick = () => { log('Refreshing data…'); refreshAll(true); };
+$('cTrack').onchange = e => { showTrack = e.target.checked; pastLine.visible = futLine.visible = showTrack; };
+$('cExag').onchange = e => { exag = e.target.checked ? 5 : 1; lastTrackAt = -1e15; };
+document.querySelectorAll('#warp button').forEach(b => b.onclick = () => {
+  const w = +b.dataset.w;
+  if (w === 1){ simOffset = 0; }
+  else { simOffset = simT - Date.now(); }
+  warp = w; lastReal = Date.now();
+  document.querySelectorAll('#warp button').forEach(x => x.classList.toggle('on', x === b));
+});
+$('bNorad').onclick = () => { const n = $('iNorad').value.trim(); if (/^\d{1,9}$/.test(n)) loadNorad(n); else log('Type a numeric NORAD catalog number.','warn'); };
+$('bTle').onclick = () => { const t = parseTle($('iTle').value)[0]; if (t) useTle(t, 'pasted'); else log('No valid TLE lines found.','bad'); };
+$('bTleClear').onclick = () => { satrec = null; tleInfo = null; store.set('st.tle', null); lastTrackAt = -1e15; log('TLE cleared. Model in use.'); };
+function fillModelForm(){
+  $('mT0').value = new Date(mission.t0).toISOString().slice(0,19)+'Z';
+  $('mDur').value = mission.durH; $('mAlt').value = mission.altKm; $('mInc').value = mission.incDeg;
+}
+$('bModel').onclick = () => {
+  const t0 = Date.parse($('mT0').value), d = +$('mDur').value, a = +$('mAlt').value, i = +$('mInc').value;
+  if (isNaN(t0) || !(d>0) || !(a>80) || !(i>0 && i<180)){ log('Model values not valid.','bad'); return; }
+  mission = { ...mission, t0, durH:d, altKm:a, incDeg:i, source:'your model settings' };
+  store.set('st.durH', d); lastTrackAt = -1e15; log('Model settings applied.','ok');
+};
+fillModelForm();
+
+let flyGoal = null;
+function flyTo(v){ flyGoal = v.clone().normalize(); }
+
+addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+/* ---------------- main loop ---------------- */
+const tmp = new THREE.Vector3();
+function occluded(v){ // is point v behind the Earth from the camera?
+  const c = camera.position, d = v.clone().sub(c), L = d.length(); d.normalize();
+  const b = c.dot(d), disc = b*b - (c.lengthSq() - 1);
+  if (disc < 0) return false; const tHit = -b - Math.sqrt(disc);
+  return tHit > 0 && tHit < L - 1e-3;
+}
+let uiTick = 0;
+function frame(){
+  requestAnimationFrame(frame);
+  const now = Date.now();
+  simT = warp === 1 && simOffset === 0 ? now : simT + (now - lastReal)*warp;
+  lastReal = now;
+
+  const ss = subsolar(simT);
+  earthMat.uniforms.sunDir.value.copy(llv(ss.lat, ss.lon, 1));
+
+  const P = phaseAt(simT);
+  let shipPos;
+  if (P.mode === 'pad'){ shipPos = llv(SITE.lat, SITE.lon, 1.002); }
+  else { shipPos = llv(P.s.lat, P.s.lon, rFor(P.s.alt)); }
+  ship.position.copy(shipPos);
+  glow.scale.setScalar(0.07 + 0.02*Math.sin(now/300));
+  const ground = shipPos.clone().normalize();
+  stemGeo.setFromPoints([ground, shipPos]); stem.visible = P.mode !== 'pad';
+
+  if (Math.abs(simT - lastTrackAt) > 15e3*Math.max(1, Math.abs(warp)/20)) buildTracks(simT);
+
+  if (follow && P.mode !== 'pad') flyGoal = shipPos.clone().normalize();
+  if (flyGoal){
+    const dist = camera.position.length();
+    const cur = camera.position.clone().normalize();
+    const goal = flyGoal.clone().add(new THREE.Vector3(0, .25, 0)).normalize();
+    cur.lerp(goal, 0.04).normalize();
+    camera.position.copy(cur.multiplyScalar(dist));
+    if (!follow && cur.angleTo(goal) < 0.01) flyGoal = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+
+  // labels
+  const tag = $('tag'), st = $('sitetag');
+  tmp.copy(shipPos).project(camera);
+  tag.style.display = occluded(shipPos) || tmp.z > 1 ? 'none' : 'block';
+  tag.style.left = ((tmp.x+1)/2*innerWidth)+'px'; tag.style.top = ((1-tmp.y)/2*innerHeight)+'px';
+  tag.textContent = P.mode === 'pad' ? (simT < mission.t0 ? 'ON PAD' : 'MISSION ENDED') : (tleInfo && P.mode==='tle' ? tleInfo.name : 'SHIP (EST.)');
+  const sp = siteMarker.position; tmp.copy(sp).project(camera);
+  st.style.display = occluded(sp) || tmp.z > 1 ? 'none' : 'block';
+  st.style.left = ((tmp.x+1)/2*innerWidth)+'px'; st.style.top = ((1-tmp.y)/2*innerHeight)+'px';
+
+  if (++uiTick % 6 === 0) updateHud(P);
+}
+
+function updateHud(P){
+  const end = mission.t0 + mission.durH*3600e3;
+  $('mission').textContent = mission.name + (mission.status ? ' · ' + mission.status : '');
+  const chip = $('mode'), lbl = chip.querySelector('span');
+  chip.className = 'chip ' + P.mode;
+  lbl.textContent = P.mode === 'tle' ? 'TRACKED · TLE / SGP4' : P.mode === 'model' ? (P.entry ? 'ESTIMATE · ENTRY PHASE' : 'ESTIMATE · NOMINAL MODEL') : P.label;
+  const met = (simT - mission.t0)/1000;
+  $('met').textContent = (met < 0 ? 'T' : 'T+') + fmtDur(met).replace('−','−');
+  $('metlabel').textContent = met < 0 ? 'COUNTDOWN TO LIFTOFF' : 'MISSION ELAPSED TIME';
+  if (P.mode === 'pad'){
+    $('lat').textContent = fmtLat(SITE.lat); $('lon').textContent = fmtLon(SITE.lon);
+    $('alt').textContent = '0 km'; $('spd').textContent = '—'; $('over').textContent = 'Starbase';
+  } else {
+    const s = P.s;
+    $('lat').textContent = fmtLat(s.lat); $('lon').textContent = fmtLon(s.lon);
+    $('alt').textContent = s.alt.toFixed(0)+' km';
+    $('spd').textContent = (s.speed*3600).toLocaleString('en-US',{maximumFractionDigits:0})+' km/h';
+    $('over').textContent = region(s.lat, s.lon);
+  }
+  if (simT < mission.t0){ $('nextk').textContent = 'Liftoff in'; $('next').textContent = fmtDur((mission.t0 - simT)/1000); }
+  else if (simT < end){ $('nextk').textContent = 'Planned return in'; $('next').textContent = fmtDur((end - simT)/1000); }
+  else { $('nextk').textContent = 'Next event'; $('next').textContent = '—'; }
+  if (P.mode === 'tle'){
+    $('srcname').textContent = tleInfo.src + ' · NORAD ' + tleInfo.norad;
+    $('srcinfo').textContent = 'TLE epoch age: ' + ((simT - tleInfo.epoch)/3600e3).toFixed(1) + ' h. Tracking data, not live telemetry.';
+  } else if (P.mode === 'model'){
+    $('srcname').textContent = 'Nominal model';
+    $('srcinfo').textContent = mission.altKm+' km, '+mission.incDeg+'° circular orbit from liftoff time ('+mission.source+'). Error grows with time — compare with the webcast.';
+  } else { $('srcname').textContent = 'Launch schedule'; $('srcinfo').textContent = mission.source; }
+  $('simclock').textContent = new Date(simT).toISOString().replace('T',' ').slice(0,19)+' UTC' + (warp !== 1 || simOffset ? '  ('+warp+'×)' : '');
+}
+
+// very coarse "over" text: named ocean / region boxes
+function region(lat, lon){
+  const box = [
+    ['Florida', 24.5, 30.5, -83, -80], ['Gulf of Mexico', 18, 30.5, -97.5, -81], ['Caribbean Sea', 9, 18, -88, -60],
+    ['Mexico', 14, 33, -118, -86], ['United States', 25, 49, -125, -67],
+    ['Indian Ocean', -45, 25, 40, 110], ['Africa', -35, 37, -18, 52], ['Australia', -44, -10, 112, 154],
+    ['South America', -56, 13, -82, -34], ['Atlantic Ocean', -60, 65, -70, -10], ['Pacific Ocean', -60, 60, 120, 180],
+    ['Pacific Ocean', -60, 60, -180, -78], ['Asia', 0, 75, 52, 145], ['Europe', 36, 71, -10, 40]
+  ];
+  for (const [n, a, b, c, d] of box) if (lat>=a && lat<=b && lon>=c && lon<=d) return n;
+  return lat < -60 ? 'Southern Ocean' : 'Ocean';
+}
+
+frame();
+log('Started. Positions are estimates or tracking data. SpaceX does not publish live telemetry.', '');
+refreshAll(false);
+setInterval(() => loadLaunches(), 15*60e3);
+setInterval(() => findStarshipTle(false), 2*3600e3 + 60e3);
+</script>
+</body>
+</html>
