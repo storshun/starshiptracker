@@ -1,6 +1,6 @@
 # Starship Tracker
 
-A 3D globe (three.js) that shows where SpaceX Starship is now. Live site: https://starship.shatteredmoon.io/
+A 3D globe (three.js) that shows where SpaceX Starship is now. Live site: https://starshiptracker-steel.vercel.app/
 
 ## Data
 - **Launch Library 2** (The Space Devs): liftoff time, mission name and status.
@@ -14,5 +14,5 @@ A 3D globe (three.js) that shows where SpaceX Starship is now. Live site: https:
 - `vercel.json` – lets x.com and twitter.com show the page in a frame.
 
 ## Posting on X
-Post `https://starship.shatteredmoon.io/`. After you change the page, post it with `?v=2` (or a new number), because X keeps cards in a cache.
+Post `https://starshiptracker-steel.vercel.app/`. After you change the page, post it with `?v=2` (or a new number), because X keeps cards in a cache.
 X can require approval of the domain before it plays a Player Card inline. Without approval, X shows the card image as a link.
