@@ -16,3 +16,9 @@ A 3D globe (three.js) that shows where SpaceX Starship is now. Live site: https:
 ## Posting on X
 Post `https://starshiptracker-steel.vercel.app/`. After you change the page, post it with `?v=2` (or a new number), because X keeps cards in a cache.
 X can require approval of the domain before it plays a Player Card inline. Without approval, X shows the card image as a link.
+
+## Ship model
+- `starship.fbx` is the source model. The pages hold a base64 copy of it (in `<script id="shipfbx">`), and three.js FBXLoader reads it from there.
+- The page finds the nose (the narrow end) and the belly (the side away from the flaps) from the mesh. If the heat-shield tiles show on the wrong side, set `BELLY_FLIP = true`.
+- Attitude is assumed, not measured: vertical on the pad, pitch-over on ascent, nose prograde with the belly to the Earth in orbit, belly-first entry at about 60° angle of attack, and a flip to vertical before the catch.
+- The ship is drawn at a fixed size on the screen. It is not to scale.
