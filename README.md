@@ -22,3 +22,15 @@ X can require approval of the domain before it plays a Player Card inline. Witho
 - The page finds the nose (the narrow end) and the belly (the side away from the flaps) from the mesh. If the heat-shield tiles show on the wrong side, set `BELLY_FLIP = true`.
 - Attitude is assumed, not measured: vertical on the pad, pitch-over on ascent, nose prograde with the belly to the Earth in orbit, belly-first entry at about 60° angle of attack, and a flip to vertical before the catch.
 - The ship is drawn at a fixed size on the screen. It is not to scale.
+
+## Sky view (camera)
+Tap **SKY VIEW** (phone) or **Sky view (camera)** (desktop). The page asks for the camera, your location and the motion sensors, and it then draws over the camera image:
+- the horizon, 30° and 60° circles and the compass points,
+- the ship (ring and label) or an arrow that shows where to turn,
+- the ship's path: last 10 min (orange), next 20 min (blue, with marks every 5 min),
+- the Sun, and whether the ship can be visible (it must be sunlit, above your horizon, and your sky must be dark).
+It also gives the next pass over your location.
+
+Phone compasses are often off by 5–20°. Drag left or right to line up the grid, or point the camera at the Sun and tap **Align on Sun**. The correction and the field of view (FOV −/+) are kept in the browser.
+Inside an X post the frame has no access to the camera or the sensors, so the button opens the full page in a new tab.
+Without motion sensors (desktop), you drag to look around.
