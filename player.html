@@ -170,7 +170,9 @@
     <div id="sStat"></div>
     <div id="skyPass"></div>
     <div id="skyMeta"></div>
+    <div id="skySens" style="font:10px 'JetBrains Mono',monospace;margin-top:3px"></div>
     <div class="row" style="margin:8px 0 0">
+      <button id="skyMotion" class="on" style="display:none">Enable motion</button>
       <button id="skySun" title="Point the camera at the Sun, then tap. Do not look at the Sun.">Align on Sun</button>
       <button id="skyLook" style="display:none">Look at ship</button>
       <button id="skyReset">Reset heading</button>
@@ -842,7 +844,8 @@ function sunLook(t){
 function isSunlit(r, t){ const s = sunDirEcf(t), k = dot3(r,s); if (k > 0) return true;
   return Math.hypot(r[0]-k*s[0], r[1]-k*s[1], r[2]-k*s[2]) > 6371; }
 
-const sky = { on:false, ori:null, have:false, absSeen:false, src:'—', iosOff:null, manual:false,
+const sky = { on:false, ori:null, quat:null, have:false, absSeen:false, src:'—', iosOff:null, manual:false,
+  lastOri:0, lastQuat:0, n:{ rel:0, abs:0, ios:0, quat:0 }, rate:0, rateN:0, rateT:0, perm:'not asked', absSensor:null,
   delta: +(store.get('st.sky.delta') || 0), fov: +(store.get('st.sky.fov') || 66),
   vAz:180, vEl:25, stream:null, watch:null, B:null, path:[], pathAt:-1e15, pass:null, passAt:-1e15, tick:0 };
 const skyEl = $('sky'), skyCan = $('skyCan'), skyVid = $('skyVid'), sctx = skyCan.getContext('2d');
@@ -860,15 +863,44 @@ function onOri(e){
     if (sky.absSeen) return;                     // prefer the absolute stream when both arrive
     sky.src = 'no compass (relative)';
   }
-  sky.ori = { a, b:e.beta || 0, g:e.gamma || 0 }; sky.have = true;
+  sky.ori = { a, b:e.beta || 0, g:e.gamma || 0 }; sky.have = true; sky.lastOri = performance.now(); sky.rateN++;
+  if (e.webkitCompassHeading != null) sky.n.ios++; else if (e.type === 'deviceorientationabsolute' || e.absolute) sky.n.abs++; else sky.n.rel++;
+}
+// Second source: Generic Sensor API (Chrome on Android). Quaternion = screen axes -> East/North/Up.
+function startAbsSensor(){
+  if (sky.absSensor || !('AbsoluteOrientationSensor' in window)) return false;
+  try {
+    const s = new AbsoluteOrientationSensor({ frequency:30, referenceFrame:'screen' });
+    s.addEventListener('reading', () => { sky.quat = Array.from(s.quaternion); sky.lastQuat = performance.now(); sky.n.quat++; if (!oriFresh()) sky.rateN++; });
+    s.addEventListener('error', e => { sky.perm = 'orientation sensor: ' + (e.error && e.error.name || 'error'); });
+    s.start(); sky.absSensor = s; return true;
+  } catch(e){ sky.perm = 'orientation sensor: ' + e.name; return false; }
+}
+const oriFresh = () => sky.ori && performance.now() - sky.lastOri < 1500;
+const quatFresh = () => sky.quat && performance.now() - sky.lastQuat < 1500;
+const sensorsLive = () => oriFresh() || quatFresh();
+async function askMotion(){   // must run inside a tap on iOS
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
+      const r = await DeviceOrientationEvent.requestPermission(); sky.perm = 'iOS motion: ' + r;
+      if (r !== 'granted') log('Motion access was not allowed. Close this tab, open the page again, and tap Allow.','warn');
+    } else sky.perm = 'no permission needed';
+  } catch(e){ sky.perm = 'iOS motion: ' + e.name; }
 }
 function screenAngle(){ return (screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle : (window.orientation || 0); }
 
 // basis of the screen in East-North-Up: x = right, y = up, z = out of the screen (camera looks along -z)
 function sensorBasis(){
-  if (sky.manual || !sky.ori){
+  const live = sensorsLive(); sky.manual = !live;
+  if (!live){
     const f = azElVec(sky.vAz, sky.vEl), r = norm3(cross3(f, [0,0,1])), u = cross3(r, f);
     return { x:r, y:u, z:[-f[0],-f[1],-f[2]] };
+  }
+  if (!oriFresh() && quatFresh()){
+    const [x,y,z,w] = sky.quat, cd = Math.cos(sky.delta*D2R), sd = Math.sin(sky.delta*D2R);
+    const rz = v => [v[0]*cd + v[1]*sd, -v[0]*sd + v[1]*cd, v[2]];          // heading correction about Up
+    sky.src = 'orientation sensor';
+    return { x:rz([1-2*(y*y+z*z), 2*(x*y+w*z), 2*(x*z-w*y)]), y:rz([2*(x*y-w*z), 1-2*(x*x+z*z), 2*(y*z+w*x)]), z:rz([2*(x*z+w*y), 2*(y*z-w*x), 1-2*(x*x+y*y)]) };
   }
   const A = (sky.ori.a - sky.delta)*D2R, Bt = sky.ori.b*D2R, G = sky.ori.g*D2R;
   const cA=Math.cos(A), sA=Math.sin(A), cB=Math.cos(Bt), sB=Math.sin(Bt), cG=Math.cos(G), sG=Math.sin(G);
@@ -1021,6 +1053,13 @@ function skyHud(L, status, color, B){
   $('skyMeta').textContent = 'You: '+(obs.lat == null ? '—' : obs.lat.toFixed(3)+', '+obs.lon.toFixed(3)+(obs.acc ? ' (±'+Math.round(obs.acc)+' m)' : '')+' · '+obs.src)
     + ' · Pointing '+faz.toFixed(0)+'° '+compass(faz)+', '+fel.toFixed(0)+'° up · Heading: '+(sky.manual ? 'drag to look around' : sky.src)
     + (sky.delta ? ' (corr. '+sky.delta.toFixed(1)+'°)' : '') + ' · FOV '+sky.fov+'°';
+  const now = performance.now(); if (now - sky.rateT > 1000){ sky.rate = Math.round(sky.rateN*1000/(now - sky.rateT || 1)); sky.rateN = 0; sky.rateT = now; }
+  const inApp = /FBAN|FBAV|Instagram|Twitter|TwitterAndroid|Line\/|; wv\)/.test(navigator.userAgent);
+  $('skySens').textContent = 'Motion: ' + (sensorsLive() ? 'OK · ' + sky.src + ' · ' + sky.rate + '/s'
+      : 'no data · ' + sky.perm + ' · events seen: rel ' + sky.n.rel + ', abs ' + sky.n.abs + ', iOS ' + sky.n.ios + ', sensor ' + sky.n.quat
+        + (window.isSecureContext ? '' : ' · page is not HTTPS') + (inApp ? ' · in-app browser: open this page in Safari or Chrome' : ''));
+  $('skySens').style.color = sensorsLive() ? '#39d98a' : '#ffc53d';
+  $('skyMotion').style.display = sensorsLive() ? 'none' : '';
   $('skySun').style.display = sky.manual ? 'none' : '';
   $('skyLook').style.display = sky.manual ? '' : 'none';
 }
@@ -1031,8 +1070,7 @@ function setObs(lat, lon, h, acc, src){ obs.lat = lat; obs.lon = lon; obs.h = h 
 async function startSky(){
   $('skyStart').style.display = 'none';
   // iOS needs this permission call directly inside the tap handler, before any await.
-  let motionReq = null;
-  try { if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') motionReq = DeviceOrientationEvent.requestPermission(); } catch(e){}
+  const motionReq = askMotion();     // first call in the tap handler (iOS rule)
   window.addEventListener('deviceorientationabsolute', onOri);
   window.addEventListener('deviceorientation', onOri);
   if (navigator.geolocation){
@@ -1045,9 +1083,10 @@ async function startSky(){
     sky.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' }, width:{ ideal:1920 } }, audio:false });
     skyVid.srcObject = sky.stream; await skyVid.play().catch(()=>{});
   } catch(e){ sky.stream = null; log('Camera not available ('+e.name+'). Sky view draws on a dark background.','warn'); }
-  if (motionReq){ try { const r = await motionReq; if (r !== 'granted') log('Motion sensors not allowed.','warn'); } catch(e){} }
-  setTimeout(() => { if (!sky.have){ sky.manual = true; const L = lookAngles(simT); if (L){ sky.vAz = L.az; sky.vEl = Math.max(L.el, 10); }
-    log('No motion sensors found. Drag to look around the sky.','warn'); } }, 2500);
+  await motionReq;
+  setTimeout(() => { if (!oriFresh()) startAbsSensor(); }, 1200);
+  setTimeout(() => { if (!sensorsLive()){ const L = lookAngles(simT); if (L){ sky.vAz = L.az; sky.vEl = Math.max(L.el, 10); }
+    log('No motion data yet. You can drag to look around. Tap "Enable motion" to try again.','warn'); } }, 3500);
 }
 function openSky(){
   if (window.top !== window){ $('bSkyNew').click(); return; }   // in an X post frame: open a full page
@@ -1060,7 +1099,8 @@ function closeSky(){
   if (sky.stream){ sky.stream.getTracks().forEach(t => t.stop()); sky.stream = null; skyVid.srcObject = null; }
   if (sky.watch != null){ navigator.geolocation.clearWatch(sky.watch); sky.watch = null; }
   window.removeEventListener('deviceorientationabsolute', onOri); window.removeEventListener('deviceorientation', onOri);
-  sky.have = false; sky.ori = null; sky.manual = false;
+  sky.have = false; sky.ori = null; sky.quat = null; sky.manual = false;
+  if (sky.absSensor){ try { sky.absSensor.stop(); } catch(e){} sky.absSensor = null; }
   if (location.hash === '#sky') history.replaceState(null, '', location.pathname);
 }
 $('bSky').onclick = openSky; $('bSkyF').onclick = openSky;
@@ -1077,6 +1117,11 @@ $('skySun').onclick = () => {
   sky.delta = wrap180(sky.delta + wrap180(s.az - faz)); store.set('st.sky.delta', sky.delta);
   log('Heading corrected by '+sky.delta.toFixed(1)+'°.','ok');
 };
+$('skyMotion').onclick = async () => {
+  const req = askMotion();          // first, inside the tap
+  window.addEventListener('deviceorientationabsolute', onOri); window.addEventListener('deviceorientation', onOri);
+  await req; startAbsSensor();
+};
 $('skyReset').onclick = () => { sky.delta = 0; store.set('st.sky.delta', 0); };
 $('skyLook').onclick = () => { const L = lookAngles(simT); if (L){ sky.vAz = L.az; sky.vEl = L.el; } };
 $('skyFovM').onclick = () => { sky.fov = Math.max(30, sky.fov - 2); store.set('st.sky.fov', sky.fov); };
@@ -1086,10 +1131,10 @@ $('skyFovP').onclick = () => { sky.fov = Math.min(100, sky.fov + 2); store.set('
   skyCan.addEventListener('pointerdown', e => { last = [e.clientX, e.clientY]; skyCan.setPointerCapture(e.pointerId); });
   skyCan.addEventListener('pointermove', e => { if (!last) return;
     const f = focalPx(skyEl.clientWidth, skyEl.clientHeight), dx = (e.clientX - last[0])/f*R2D, dy = (e.clientY - last[1])/f*R2D; last = [e.clientX, e.clientY];
-    if (sky.manual || !sky.have){ sky.vAz = (sky.vAz - dx + 360) % 360; sky.vEl = Math.max(-30, Math.min(89, sky.vEl + dy)); }
+    if (!sensorsLive()){ sky.vAz = (sky.vAz - dx + 360) % 360; sky.vEl = Math.max(-30, Math.min(89, sky.vEl + dy)); }
     else { sky.delta = wrap180(sky.delta - dx); }
   });
-  const up = () => { if (last && !sky.manual) store.set('st.sky.delta', sky.delta); last = null; };
+  const up = () => { if (last && sensorsLive()) store.set('st.sky.delta', sky.delta); last = null; };
   skyCan.addEventListener('pointerup', up); skyCan.addEventListener('pointercancel', up);
 }
 if (location.hash === '#sky') openSky();
